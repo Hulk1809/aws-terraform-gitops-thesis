@@ -12,6 +12,12 @@ crash.*.log
 # Exclude sensitive tfvars if needed (keep sample/default)
 *.tfvars.json
 
+# Private keys and credentials
+*.pem
+*.ppk
+*.key
+.aws/
+
 # Ignore override files
 override.tf
 override.tf.json
