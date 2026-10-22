@@ -1,0 +1,70 @@
+name: 01 - PR Validation for Terraform Modules
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "modules/vpc/**"
+      - "modules/compute-ec2/**"
+      - ".github/workflows/01-pr-validation-finops.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tv2-terraform-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  terraform-validation:
+    name: Validate ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - modules/vpc
+          - modules/compute-ec2
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ matrix.module }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -diff
+
+      - name: Initialize module
+        run: terraform init -backend=false -input=false
+
+      - name: Validate module
+        run: terraform validate -no-color
+
+  checkov:
+    name: Checkov security scan (TV2 modules)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Scan VPC and EC2 modules
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: modules
+          framework: terraform
+          quiet: true
+          soft_fail: false
