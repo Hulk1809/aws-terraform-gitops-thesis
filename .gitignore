@@ -12,6 +12,7 @@ crash.*.log
 
 # Exclude sensitive tfvars if needed (keep sample/default)
 *.tfvars.json
+*.auto.tfvars
 
 # Private keys and credentials
 *.pem
