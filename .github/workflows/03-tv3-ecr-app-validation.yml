@@ -68,4 +68,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build container image
-        run: docker build --tag thesis-app:${{ github.sha }} app-demo
+        run: |
+          if [[ -f app-demo/Dockerfile ]]; then
+            docker build --tag thesis-app:${{ github.sha }} app-demo
+          else
+            echo "app-demo/Dockerfile chưa có; bỏ qua đến khi TV3 thêm ứng dụng."
+          fi
