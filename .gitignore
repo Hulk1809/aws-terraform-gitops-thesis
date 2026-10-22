@@ -1,0 +1,28 @@
+# Local .terraform directories
+**/.terraform/*
+
+# .tfstate files
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Exclude sensitive tfvars if needed (keep sample/default)
+*.tfvars.json
+
+# Ignore override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Infracost output
+.infracost/
+
+# OS and Editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
