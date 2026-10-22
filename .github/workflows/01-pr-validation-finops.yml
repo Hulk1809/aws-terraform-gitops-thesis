@@ -4,10 +4,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "modules/vpc/**"
-      - "modules/compute-ec2/**"
-      - ".github/workflows/01-pr-validation-finops.yml"
 
 permissions:
   contents: read
