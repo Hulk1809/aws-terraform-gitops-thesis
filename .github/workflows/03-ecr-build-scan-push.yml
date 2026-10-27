@@ -1,0 +1,130 @@
+
+name: "03 - ECR Build, Trivy Scan & Push"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app-demo/**"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  TRIVY_SEVERITY: "CRITICAL,HIGH"
+
+jobs:
+  build-scan-push:
+    name: "Build, Scan & Push Container"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: "1. Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "2. Validate GitHub Configuration"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== Validate required configuration ==="
+
+          if [ -z "${AWS_REGION:-}" ]; then
+            echo "::error::GitHub Variable AWS_REGION chưa được cấu hình."
+            exit 1
+          fi
+
+          if [ -z "${ECR_REPOSITORY:-}" ]; then
+            echo "::error::GitHub Variable ECR_REPOSITORY chưa được cấu hình."
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.AWS_ROLE_ARN }}" ]; then
+            echo "::error::GitHub Secret AWS_ROLE_ARN chưa được cấu hình."
+            exit 1
+          fi
+
+          echo "AWS_REGION=${AWS_REGION}"
+          echo "ECR_REPOSITORY=${ECR_REPOSITORY}"
+          echo "Required configuration is present."
+
+      - name: "3. Configure AWS Credentials via OIDC"
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: "4. Verify AWS Identity"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== AWS Identity ==="
+
+          aws sts get-caller-identity
+
+      - name: "5. Login to Amazon ECR"
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: "6. Prepare Docker Image Tag"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IMAGE_TAG="v-${GITHUB_SHA}"
+
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> "${GITHUB_ENV}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> "${GITHUB_ENV}"
+
+          echo "Image tag: ${IMAGE_TAG}"
+          echo "Image URI: ${IMAGE_URI}"
+
+      - name: "7. Build Docker Image"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== Docker Build ==="
+
+          docker build \
+            --build-arg "GIT_COMMIT_SHA=${GITHUB_SHA}" \
+            --tag "${IMAGE_URI}" \
+            ./app-demo
+
+          echo "Docker image built successfully."
+
+          docker image inspect "${IMAGE_URI}" \
+            --format '{{.Id}}'
+
+      - name: "8. Trivy Scan - HIGH/CRITICAL Gate"
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_URI }}
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: ${{ env.TRIVY_SEVERITY }}
+
+      - name: "9. Push Verified Image to Amazon ECR"
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "=== Trivy passed ==="
+          echo "Pushing verified image..."
+
+          docker push "${IMAGE_URI}"
+
+          echo "Image pushed successfully."
+          echo "IMAGE_URI=${IMAGE_URI}"
