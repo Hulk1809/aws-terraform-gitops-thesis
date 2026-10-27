@@ -1,6 +1,6 @@
 resource "aws_ecr_repository" "app_repo" {
-#checkov:skip=CKV_AWS_136: Project specification requires AES256 encryption; KMS is intentionally omitted to keep key management simple and avoid additional cost in the AWS Free Tier demo.
-name                 = var.repository_name
+  #checkov:skip=CKV_AWS_136: Project specification requires AES256 encryption; KMS is intentionally omitted to keep key management simple and avoid additional cost in the AWS Free Tier demo.
+  name                 = var.repository_name
   image_tag_mutability = "IMMUTABLE"
   force_delete         = true
 
@@ -25,8 +25,7 @@ resource "aws_ecr_lifecycle_policy" "free_tier_saver" {
     rules = [
       {
         rulePriority = 1
-
-        description = "Expire untagged images after 1 day"
+        description  = "Expire untagged images after 1 day"
 
         selection = {
           tagStatus   = "untagged"
@@ -41,14 +40,13 @@ resource "aws_ecr_lifecycle_policy" "free_tier_saver" {
       },
       {
         rulePriority = 2
-
-        description = "Keep at most 3 tagged images with v prefix"
+        description  = "Keep at most 3 tagged images with v prefix"
 
         selection = {
-          tagStatus      = "tagged"
-          tagPrefixList  = ["v"]
-          countType      = "imageCountMoreThan"
-          countNumber    = 3
+          tagStatus     = "tagged"
+          tagPrefixList = ["v"]
+          countType     = "imageCountMoreThan"
+          countNumber   = 3
         }
 
         action = {
