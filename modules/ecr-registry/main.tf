@@ -1,3 +1,4 @@
+#checkov:skip=CKV_AWS_136: Project specification requires AES256 encryption; KMS is intentionally omitted to keep key management simple and avoid additional cost in the AWS Free Tier demo.
 resource "aws_ecr_repository" "app_repo" {
   name                 = var.repository_name
   image_tag_mutability = "IMMUTABLE"
