@@ -1,7 +1,7 @@
 variable "environment" {
-  type        = string
+  type = string
 }
 
 variable "repository_name" {
-  type        = string
+  type = string
 }
