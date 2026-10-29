@@ -1,4 +1,5 @@
 resource "aws_vpc" "main" {
+  #checkov:skip=CKV2_AWS_11:Flow logs phat sinh phi, ngoai Free Tier 0 USD
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
@@ -37,6 +38,8 @@ resource "aws_route_table_association" "public_assoc" {
 }
 
 resource "aws_security_group" "web_sg" {
+    #checkov:skip=CKV_AWS_260:Web app cong khai nen can mo port 80
+  #checkov:skip=CKV2_AWS_5:SG duoc gan vao EC2 o module compute-ec2
   name        = "${var.environment}-web-sg"
   description = "Allow HTTP inbound and DNS/ECR outbound for Thesis Demo Web App"
   vpc_id      = aws_vpc.main.id
