@@ -30,10 +30,11 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 }
 
 resource "aws_instance" "app_server" {
-   #checkov:skip=CKV_AWS_88:Can Public IP vi khong dung NAT Gateway
+  #checkov:skip=CKV_AWS_88:Can Public IP vi khong dung NAT Gateway
   #checkov:skip=CKV_AWS_126:Detailed monitoring tinh phi CloudWatch
   ami                         = data.aws_ami.amazon_linux_2023.id
   instance_type               = "t3.micro"
+  ebs_optimized               = true
   subnet_id                   = var.public_subnet_id
   vpc_security_group_ids      = [var.security_group_id]
   iam_instance_profile        = aws_iam_instance_profile.ec2_profile.name

@@ -38,7 +38,7 @@ resource "aws_route_table_association" "public_assoc" {
 }
 
 resource "aws_security_group" "web_sg" {
-    #checkov:skip=CKV_AWS_260:Web app cong khai nen can mo port 80
+  #checkov:skip=CKV_AWS_260:Web app cong khai nen can mo port 80
   #checkov:skip=CKV2_AWS_5:SG duoc gan vao EC2 o module compute-ec2
   name        = "${var.environment}-web-sg"
   description = "Allow HTTP inbound and DNS/ECR outbound for Thesis Demo Web App"
