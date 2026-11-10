@@ -1,76 +1,44 @@
 name: 03 - TV3 ECR and App Validation
-
 on:
   pull_request:
-    branches:
-      - main
-
+    branches: [main]
 permissions:
   contents: read
-
-concurrency:
-  group: tv3-validation-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 jobs:
-  ecr-module-validation:
+  validate:
     name: Validate modules/ecr-registry
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        shell: bash
-        working-directory: modules/ecr-registry
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.10.5
           terraform_wrapper: false
-
-      - name: Check Terraform formatting
-        run: terraform fmt -check -diff
-
-      - name: Initialize module
-        run: terraform init -backend=false -input=false
-
-      - name: Validate module
-        run: terraform validate -no-color
-
-  ecr-checkov:
+      - run: terraform -chdir=modules/ecr-registry fmt -check -diff
+      - run: terraform -chdir=modules/ecr-registry init -backend=false -input=false
+      - run: terraform -chdir=modules/ecr-registry validate
+  scan:
     name: Checkov security scan (TV3 ECR)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Scan ECR module
-        uses: bridgecrewio/checkov-action@v12
+      - uses: actions/checkout@v4
+      - uses: bridgecrewio/checkov-action@v12
         with:
           directory: modules/ecr-registry
           framework: terraform
           quiet: true
           soft_fail: false
-
-  app-image-build:
+  image:
     name: Build app-demo container
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
+    timeout-minutes: 20
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Build container image
-        run: |
-          if [[ -f app-demo/Dockerfile ]]; then
-            docker build --tag thesis-app:${{ github.sha }} app-demo
-          else
-            echo "app-demo/Dockerfile chưa có; bỏ qua đến khi TV3 thêm ứng dụng."
-          fi
+      - uses: actions/checkout@v4
+      - run: docker build --build-arg GIT_COMMIT_SHA="$GITHUB_SHA" -t thesis-app:test app-demo
+      - uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: thesis-app:test
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+      - run: bash tests/check.sh

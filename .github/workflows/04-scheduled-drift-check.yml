@@ -1,0 +1,85 @@
+name: 04 - Drift Detection and Reconcile
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      auto_reconcile:
+        description: Apply saved plan to restore Git configuration
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+concurrency:
+  group: terraform-prod
+  cancel-in-progress: false
+jobs:
+  drift:
+    if: github.ref == 'refs/heads/main' && vars.AWS_DRIFT_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: environments/prod
+    env:
+      TF_IN_AUTOMATION: 'true'
+      TF_INPUT: 'false'
+      TF_VAR_alert_email: ${{ secrets.TF_VAR_ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-southeast-1
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+      - run: terraform init -input=false
+      - name: Require deployed state and preserve deployed image
+        run: |
+          set -euo pipefail
+          test -n "$(terraform state list)"
+          tag=$(terraform output -raw image_tag)
+          [[ "$tag" =~ ^v-[0-9a-f]{40}$ ]]
+          echo "TF_VAR_image_tag=$tag" >> "$GITHUB_ENV"
+      - name: Detect drift
+        id: plan
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -out=drift.tfplan -lock-timeout=5m
+          code=$?
+          set -e
+          case "$code" in
+            0|2) echo "code=$code" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$code" ;;
+          esac
+      - name: Record sanitized drift alert
+        if: steps.plan.outputs.code == '2'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '[DRIFT ALERT] Production differs from Git';
+            const issues = await github.paginate(github.rest.issues.listForRepo, {...context.repo, state: 'open', creator: 'github-actions[bot]'});
+            const body = `Terraform exit code 2. Review Actions run before reconcile.\nRun: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\nNo state or raw plan is published in this public issue. Actions logs in this public repository are public; Terraform sensitive values must remain marked sensitive.`;
+            const existing = issues.find(i => i.title === title && !i.pull_request);
+            if (existing) await github.rest.issues.createComment({...context.repo, issue_number: existing.number, body});
+            else await github.rest.issues.create({...context.repo, title, body});
+      - name: Restore Git configuration using saved plan
+        if: steps.plan.outputs.code == '2' && github.event_name == 'workflow_dispatch' && inputs.auto_reconcile
+        run: terraform apply drift.tfplan
+      - name: Verify reconcile
+        if: steps.plan.outputs.code == '2' && github.event_name == 'workflow_dispatch' && inputs.auto_reconcile
+        run: terraform plan -detailed-exitcode -lock-timeout=5m
+      - name: Close resolved alerts
+        if: steps.plan.outputs.code == '0' || (github.event_name == 'workflow_dispatch' && inputs.auto_reconcile)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issues = await github.paginate(github.rest.issues.listForRepo, {...context.repo, state: 'open', creator: 'github-actions[bot]'});
+            for (const issue of issues.filter(i => i.title === '[DRIFT ALERT] Production differs from Git' && !i.pull_request)) {
+              await github.rest.issues.update({...context.repo, issue_number: issue.number, state: 'closed'});
+            }

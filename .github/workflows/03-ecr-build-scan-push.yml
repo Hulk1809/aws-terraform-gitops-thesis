@@ -1,0 +1,48 @@
+name: 03 - ECR Build, Scan and Push
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.AWS_AUTO_DEPLOY == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AWS_REGION: ap-southeast-1
+      ECR_REPOSITORY: thesis-cloud-app-repo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - name: Build exact commit
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          echo "IMAGE_URI=$REGISTRY/$ECR_REPOSITORY:v-$GITHUB_SHA" >> "$GITHUB_ENV"
+          docker build --build-arg GIT_COMMIT_SHA="$GITHUB_SHA" -t "$REGISTRY/$ECR_REPOSITORY:v-$GITHUB_SHA" app-demo
+      - uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ env.IMAGE_URI }}
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+      - name: Publish immutable tag (safe to rerun)
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids "imageTag=v-$GITHUB_SHA" > /tmp/image.json 2>/tmp/image-error; then
+            echo 'Immutable tag already exists; keeping original image.'
+          elif grep -q ImageNotFoundException /tmp/image-error; then
+            docker push "$IMAGE_URI"
+          else
+            cat /tmp/image-error >&2
+            exit 1
+          fi
