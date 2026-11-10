@@ -1,0 +1,44 @@
+name: 03 - TV3 ECR and App Validation
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: Validate modules/ecr-registry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+      - run: terraform -chdir=modules/ecr-registry fmt -check -diff
+      - run: terraform -chdir=modules/ecr-registry init -backend=false -input=false
+      - run: terraform -chdir=modules/ecr-registry validate
+  scan:
+    name: Checkov security scan (TV3 ECR)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: modules/ecr-registry
+          framework: terraform
+          quiet: true
+          soft_fail: false
+  image:
+    name: Build app-demo container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --build-arg GIT_COMMIT_SHA="$GITHUB_SHA" -t thesis-app:test app-demo
+      - uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: thesis-app:test
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+      - run: bash tests/check.sh

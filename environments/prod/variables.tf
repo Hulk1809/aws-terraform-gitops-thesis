@@ -4,6 +4,15 @@ variable "aws_region" {
   default     = "ap-southeast-1"
 }
 
+variable "image_tag" {
+  type        = string
+  description = "Exact immutable image tag; supplied by deployment workflow."
+  validation {
+    condition     = can(regex("^v-[0-9a-f]{40}$", var.image_tag))
+    error_message = "image_tag must be v- followed by a full lowercase Git SHA."
+  }
+}
+
 variable "environment" {
   description = "Tên môi trường"
   type        = string

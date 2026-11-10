@@ -2,6 +2,8 @@
 
 > Tài liệu dùng chung cho nhóm 3 thành viên. Đọc toàn bộ trước buổi demo, sau đó mỗi người luyện đúng phần được giao.
 
+> **Cập nhật tích hợp 10/11/2026:** hướng dẫn thao tác hiện hành ở [README.md](README.md), trạng thái kiểm chứng ở [ACCEPTANCE.md](ACCEPTANCE.md). Code đã có không có nghĩa AWS đã nghiệm thu. Apply hiện tạo ECR trước, build/scan/push image rồi mới tạo EC2. Destroy cần nhập `DESTROY`. Drift phải bật `AWS_DRIFT_ENABLED` sau apply; tắt trước destroy. Thiếu `INFRACOST_API_KEY` nên chưa có dự toán Infracost thật. Nội dung trình bày dưới đây chỉ là kịch bản, không phải minh chứng đã chạy.
+
 ## 1. Mục tiêu đồ án
 
 Đồ án xây dựng quy trình quản lý toàn bộ vòng đời hạ tầng và ứng dụng container trên AWS bằng mã nguồn:
@@ -147,7 +149,7 @@ Phụ trách trình bày:
 
 ### 5.4. Trạng thái hiện tại của dự án
 
-Tại thời điểm tạo tài liệu:
+Tại thời điểm tạo tài liệu ban đầu (lịch sử; trạng thái mới xem ACCEPTANCE.md):
 
 - Bootstrap S3/OIDC: đã hoàn thành.
 - Workflow validation TV2/TV3: đã hoạt động.

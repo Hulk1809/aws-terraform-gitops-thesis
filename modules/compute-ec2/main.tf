@@ -41,11 +41,16 @@ resource "aws_instance" "app_server" {
   associate_public_ip_address = true
   monitoring                  = false
   user_data_replace_on_change = true
+  depends_on                  = [aws_iam_role_policy_attachment.ecr_readonly]
+
+  credit_specification {
+    cpu_credits = "standard"
+  }
 
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 2
+    http_put_response_hop_limit = 1
   }
 
   root_block_device {
@@ -58,12 +63,12 @@ resource "aws_instance" "app_server" {
   user_data = <<-EOF
     #!/bin/bash
     exec > /var/log/user-data.log 2>&1
-    set -x
+    set -euo pipefail
 
     ECR_URL="${var.ecr_repository_url}"
     REGION="${var.aws_region}"
     REGISTRY="$${ECR_URL%%/*}"
-    REPO_NAME="$${ECR_URL#*/}"
+    IMAGE="$ECR_URL:${var.image_tag}"
 
     dnf install -y docker
     systemctl enable --now docker
@@ -75,15 +80,25 @@ resource "aws_instance" "app_server" {
       sleep 10
     done
 
-    TAG=$(aws ecr describe-images --region "$REGION" --repository-name "$REPO_NAME" \
-      --query 'sort_by(imageDetails,&imagePushedAt)[-1].imageTags[]' --output text 2>/dev/null \
-      | tr '\t' '\n' | grep '^v' | head -1)
-
-    if [ -n "$TAG" ] && docker pull "$ECR_URL:$TAG"; then
-      docker run -d --restart always -p 80:80 --name thesis-web-app "$ECR_URL:$TAG"
-    else
-      docker run -d --restart always -p 80:80 --name thesis-web-app nginx:alpine
-    fi
+    docker pull "$IMAGE"
+    TOKEN=$(curl --fail --silent --show-error --retry 5 -X PUT \
+      -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' \
+      http://169.254.169.254/latest/api/token)
+    metadata() {
+      curl --fail --silent --show-error --retry 5 \
+        -H "X-aws-ec2-metadata-token: $TOKEN" \
+        "http://169.254.169.254/latest/meta-data/$1"
+    }
+    mkdir -p /opt/thesis
+    BOOT_TIME=$(awk '/^btime / {print $2}' /proc/stat)
+    printf '{"instance_id":"%s","region":"%s","availability_zone":"%s","boot_time":%s}\n' \
+      "$(metadata instance-id)" "$(metadata placement/region)" \
+      "$(metadata placement/availability-zone)" "$BOOT_TIME" > /opt/thesis/runtime.json
+    chmod 644 /opt/thesis/runtime.json
+    unset TOKEN
+    docker run -d --restart always -p 80:80 --name thesis-web-app \
+      --security-opt no-new-privileges:true \
+      -v /opt/thesis/runtime.json:/usr/share/nginx/html/runtime.json:ro "$IMAGE"
   EOF
 
   tags = { Name = "${var.environment}-Thesis-FreeTier-EC2" }

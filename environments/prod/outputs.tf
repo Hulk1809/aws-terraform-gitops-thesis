@@ -3,6 +3,10 @@ output "application_url" {
   value       = "http://${module.compute_ec2.public_ip}"
 }
 
+output "image_tag" {
+  value = var.image_tag
+}
+
 output "ec2_public_ip" {
   description = "Public IPv4 của EC2"
   value       = module.compute_ec2.public_ip

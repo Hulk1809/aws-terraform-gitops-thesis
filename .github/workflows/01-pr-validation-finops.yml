@@ -23,6 +23,7 @@ jobs:
         module:
           - modules/vpc
           - modules/compute-ec2
+          - environments/prod
 
     defaults:
       run:
@@ -64,3 +65,39 @@ jobs:
           framework: terraform
           quiet: true
           soft_fail: false
+
+  finops:
+    name: FinOps policy gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      TF_VAR_alert_email: ci@example.invalid
+      TF_VAR_image_tag: v-${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce lab resource ceiling
+        run: python3 tests/finops.py --check-source
+      - name: Report missing external credential
+        if: env.INFRACOST_API_KEY == ''
+        run: echo 'Infracost NOT RUN. Add INFRACOST_API_KEY to enable priced estimate and PR comment. Static resource ceiling passed, not a cost estimate.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: infracost/actions/setup@v3
+        if: env.INFRACOST_API_KEY != ''
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      - name: Estimate and enforce monthly list-price ceiling
+        if: env.INFRACOST_API_KEY != ''
+        run: |
+          infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost.json
+          python3 tests/finops.py /tmp/infracost.json
+      - name: Comment estimate
+        if: always() && env.INFRACOST_API_KEY != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          test -f /tmp/infracost.json
+          infracost comment github --path=/tmp/infracost.json --repo="$GITHUB_REPOSITORY" --pull-request="$PR_NUMBER" --github-token="$GH_TOKEN" --behavior=update

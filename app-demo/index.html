@@ -1115,16 +1115,15 @@
 
                         <span class="indicator"></span>
 
-                        Dữ liệu minh họa
+                        Runtime EC2 (IMDSv2 phía máy chủ)
 
                     </div>
 
-                    <ul>
+                    <ul id="runtimeMetadata" aria-live="polite">
 
                         <li>
-                            <strong>AWS Region:</strong>
-                            Hiển thị theo kiến trúc dự án,
-                            không tự nhận là dữ liệu runtime.
+                            <strong>Trạng thái:</strong>
+                            Chưa đọc metadata runtime.
                         </li>
 
                         <li>
@@ -1171,8 +1170,7 @@
                     Dashboard này
                     <strong>không giả vờ truy vấn</strong>
                     endpoint IMDSv2 để lấy metadata của EC2.
-                    Nếu hệ thống cần runtime metadata, nên thực hiện
-                    việc truy vấn ở phía server-side, giới hạn dữ liệu
+                    User Data truy vấn IMDSv2 phía EC2, giới hạn dữ liệu
                     được trả về và tuyệt đối không expose credential,
                     token hoặc thông tin nhạy cảm cho trình duyệt.
                 </p>
@@ -1181,7 +1179,7 @@
 
                 <p>
                     Ví dụ kiến trúc an toàn:
-                    <code>Browser → Application Server → IMDSv2</code>.
+                    <code>EC2 User Data → IMDSv2 → runtime.json → Browser</code>.
                     Application Server chỉ trả về những trường cần thiết
                     như environment hoặc instance identifier đã được
                     kiểm soát, thay vì chuyển tiếp toàn bộ metadata.
@@ -1345,6 +1343,31 @@
         }
     }
 
+    async function loadRuntime() {
+        const element = document.getElementById("runtimeMetadata");
+        try {
+            const response = await fetch("/runtime.json", { cache: "no-store" });
+            if (!response.ok) throw new Error("Runtime metadata unavailable");
+            const data = await response.json();
+            element.replaceChildren();
+            for (const [key, label] of [["instance_id", "Instance ID"], ["region", "Region"], ["availability_zone", "Availability Zone"]]) {
+                if (typeof data[key] !== "string") throw new Error("Invalid runtime metadata");
+                const item = document.createElement("li");
+                item.textContent = `${label}: ${data[key]}`;
+                element.append(item);
+            }
+            if (Number.isFinite(data.boot_time)) {
+                const uptime = document.createElement("li");
+                element.append(uptime);
+                const refresh = () => { uptime.textContent = `EC2 uptime: ${Math.max(0, Math.floor(Date.now() / 1000 - data.boot_time))} giây (theo đồng hồ trình duyệt)`; };
+                refresh();
+                setInterval(refresh, 1000);
+            }
+        } catch {
+            element.textContent = "Runtime chưa có. Chỉ EC2 đã chạy User Data mới cung cấp metadata thật.";
+        }
+    }
+    loadRuntime();
     loadCommitSha();
 </script>
 

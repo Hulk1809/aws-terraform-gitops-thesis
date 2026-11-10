@@ -22,4 +22,6 @@ module "compute_ec2" {
   public_subnet_id   = module.vpc.public_subnet_id
   security_group_id  = module.vpc.web_sg_id
   ecr_repository_url = module.ecr_registry.repository_url
+  image_tag          = var.image_tag
+  depends_on         = [module.vpc]
 }
