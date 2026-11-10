@@ -1,0 +1,530 @@
+name: "04 - Infrastructure Drift Detection & GitOps Self-Healing"
+
+on:
+  schedule:
+    - cron: "0 17 * * *"
+
+  workflow_dispatch:
+    inputs:
+      auto_reconcile:
+        description: "Bật tự động reconcile sau khi được phê duyệt"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+concurrency:
+  group: terraform-prod-drift
+  cancel-in-progress: false
+
+jobs:
+
+  detect-drift:
+    name: "Detect Terraform Drift"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      TF_DIR: environments/prod
+
+      AWS_REGION: ${{ vars.AWS_REGION }}
+
+      TF_EXPECTED_WORKSPACE: ${{ vars.TF_EXPECTED_WORKSPACE }}
+      TF_EXPECTED_BACKEND_BUCKET: ${{ vars.TF_EXPECTED_BACKEND_BUCKET }}
+      TF_EXPECTED_BACKEND_KEY: ${{ vars.TF_EXPECTED_BACKEND_KEY }}
+      TF_EXPECTED_BACKEND_REGION: ${{ vars.TF_EXPECTED_BACKEND_REGION }}
+
+    outputs:
+      plan_exit_code: ${{ steps.plan.outputs.exit_code }}
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate required repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          missing=0
+
+          for name in \
+            AWS_REGION \
+            TF_EXPECTED_WORKSPACE \
+            TF_EXPECTED_BACKEND_BUCKET \
+            TF_EXPECTED_BACKEND_KEY \
+            TF_EXPECTED_BACKEND_REGION
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "ERROR: GitHub Actions variable ${name} is not configured."
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "ERROR: Drift check stopped because required configuration is missing."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws sts get-caller-identity > /dev/null
+
+          echo "AWS OIDC authentication succeeded."
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform init \
+            -input=false \
+            -no-color
+
+      - name: Validate Terraform workspace and S3 backend
+        working-directory: ${{ env.TF_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking Terraform workspace..."
+
+          actual_workspace="$(terraform workspace show)"
+
+          if [ "$actual_workspace" != "$TF_EXPECTED_WORKSPACE" ]; then
+            echo "ERROR: Terraform workspace mismatch."
+            echo "Expected workspace does not match the current workspace."
+            exit 1
+          fi
+
+          echo "Terraform workspace validation passed."
+
+          if [ ! -f ".terraform/terraform.tfstate" ]; then
+            echo "ERROR: Terraform backend metadata was not found after init."
+            echo "Refusing to continue because backend cannot be verified."
+            exit 1
+          fi
+
+          actual_backend_type="$(
+            jq -r '.backend.type // empty' .terraform/terraform.tfstate
+          )"
+
+          actual_bucket="$(
+            jq -r '.backend.config.bucket // empty' .terraform/terraform.tfstate
+          )"
+
+          actual_key="$(
+            jq -r '.backend.config.key // empty' .terraform/terraform.tfstate
+          )"
+
+          actual_region="$(
+            jq -r '.backend.config.region // empty' .terraform/terraform.tfstate
+          )"
+
+          if [ "$actual_backend_type" != "s3" ]; then
+            echo "ERROR: Terraform backend is not S3."
+            exit 1
+          fi
+
+          if [ "$actual_bucket" != "$TF_EXPECTED_BACKEND_BUCKET" ]; then
+            echo "ERROR: S3 backend bucket does not match the approved configuration."
+            exit 1
+          fi
+
+          if [ "$actual_key" != "$TF_EXPECTED_BACKEND_KEY" ]; then
+            echo "ERROR: S3 backend key does not match the approved configuration."
+            exit 1
+          fi
+
+          if [ "$actual_region" != "$TF_EXPECTED_BACKEND_REGION" ]; then
+            echo "ERROR: S3 backend region does not match the approved configuration."
+            exit 1
+          fi
+
+          echo "Terraform workspace/backend validation passed."
+
+      - name: Terraform plan with detailed exit code
+        id: plan
+        working-directory: ${{ env.TF_DIR }}
+        shell: bash
+        run: |
+          set +e
+
+          terraform plan \
+            -input=false \
+            -no-color \
+            -var-file="terraform.tfvars" \
+            -detailed-exitcode \
+            -out=drift.tfplan \
+            > plan.log 2>&1
+
+          exit_code=$?
+
+          set -e
+
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+          echo "Terraform plan exit code: $exit_code"
+
+          if [ "$exit_code" -eq 0 ]; then
+            echo "RESULT: No infrastructure drift detected."
+            exit 0
+          fi
+
+          if [ "$exit_code" -eq 2 ]; then
+            echo "RESULT: Infrastructure drift detected."
+
+            if terraform show -json drift.tfplan > drift.json 2>/dev/null; then
+
+              {
+                echo "Drift resource action summary:"
+                echo
+
+                jq -r '
+                  [
+                    .resource_changes[]?
+                    | .change.actions[]?
+                  ]
+                  | group_by(.)
+                  | map(
+                      "- "
+                      + .[0]
+                      + ": "
+                      + (length | tostring)
+                    )
+                  | .[]
+                ' drift.json
+
+                echo
+                echo "Detailed resource action list:"
+                echo "ACTION    ADDRESS"
+
+                jq -r '
+                  .resource_changes[]?
+                  | [
+                      (.change.actions | join(",")),
+                      .address
+                    ]
+                  | @tsv
+                ' drift.json
+
+              } > drift-details.txt
+
+            else
+
+              echo "Drift was detected, but a safe resource-action summary could not be generated." \
+                > drift-details.txt
+
+            fi
+
+            exit 0
+          fi
+
+          echo "ERROR: Terraform plan execution failed."
+          echo "Terraform detailed exit code: $exit_code"
+          echo "No drift reconciliation will be attempted."
+
+          exit 0
+
+      - name: Create [DRIFT ALERT] GitHub Issue
+        if: steps.plan.outputs.exit_code == '2'
+        uses: actions/github-script@v7
+        env:
+          TF_DIR: ${{ env.TF_DIR }}
+          PLAN_EXIT_CODE: ${{ steps.plan.outputs.exit_code }}
+
+        with:
+          script: |
+            const fs = require("fs");
+
+            const detailsPath =
+              `${process.env.TF_DIR}/drift-details.txt`;
+
+            let details =
+              "Không thể tạo danh sách chi tiết resource actions.";
+
+            if (fs.existsSync(detailsPath)) {
+              details = fs
+                .readFileSync(detailsPath, "utf8")
+                .slice(0, 20000);
+            }
+
+            const title =
+              `[DRIFT ALERT] Terraform drift detected - run ${context.runNumber}`;
+
+            const body = [
+              "## ⚠️ Infrastructure Drift Detected",
+              "",
+              "Terraform phát hiện trạng thái hạ tầng AWS hiện tại không còn khớp với cấu hình Terraform trong repository.",
+              "",
+              `- Workflow run: [#${context.runNumber}](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              `- Terraform path: \`${process.env.TF_DIR}\``,
+              `- Terraform detailed exit code: \`${process.env.PLAN_EXIT_CODE}\``,
+              "",
+              "### Safe Plan Summary",
+              "",
+              "Workflow chỉ đưa resource address và action vào Issue.",
+              "Raw Terraform plan không được copy vào Issue để giảm nguy cơ làm lộ giá trị nhạy cảm.",
+              "",
+              "```text",
+              details,
+              "```",
+              "",
+              "### Recommended action",
+              "",
+              "1. Kiểm tra thay đổi trực tiếp trên AWS.",
+              "2. So sánh với Terraform configuration trên Git.",
+              "3. Nếu thay đổi không hợp lệ, chạy workflow với auto_reconcile=true.",
+              "4. Reconciliation chỉ được thực hiện sau bước phê duyệt GitHub Environment.",
+              ""
+            ].join("\n");
+
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: "drift-detected"
+              });
+            } catch (error) {
+              if (error.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: "drift-detected",
+                  description: "Terraform infrastructure drift detected",
+                  color: "B60205"
+                });
+              } else {
+                throw error;
+              }
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ["drift-detected"]
+            });
+
+      - name: Fail workflow when Terraform plan execution fails
+        if: steps.plan.outputs.exit_code != '0' && steps.plan.outputs.exit_code != '2'
+        shell: bash
+        run: |
+          exit_code="${{ steps.plan.outputs.exit_code }}"
+
+          echo "ERROR: Terraform plan failed with exit code ${exit_code}."
+          echo "Drift reconciliation is disabled."
+
+          exit 1
+
+
+  auto-reconcile:
+    name: "Approved Terraform Reconciliation"
+    needs: detect-drift
+
+    if: >
+      needs.detect-drift.outputs.plan_exit_code == '2'
+      && github.event_name == 'workflow_dispatch'
+      && inputs.auto_reconcile == true
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    environment:
+      name: terraform-reconcile
+
+    env:
+      TF_DIR: environments/prod
+
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_EXPECTED_WORKSPACE: ${{ vars.TF_EXPECTED_WORKSPACE }}
+      TF_EXPECTED_BACKEND_BUCKET: ${{ vars.TF_EXPECTED_BACKEND_BUCKET }}
+      TF_EXPECTED_BACKEND_KEY: ${{ vars.TF_EXPECTED_BACKEND_KEY }}
+      TF_EXPECTED_BACKEND_REGION: ${{ vars.TF_EXPECTED_BACKEND_REGION }}
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate required repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          missing=0
+
+          for name in \
+            AWS_REGION \
+            TF_EXPECTED_WORKSPACE \
+            TF_EXPECTED_BACKEND_BUCKET \
+            TF_EXPECTED_BACKEND_KEY \
+            TF_EXPECTED_BACKEND_REGION
+          do
+            if [ -z "${!name:-}" ]; then
+              echo "ERROR: GitHub Actions variable ${name} is not configured."
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Configure AWS credentials via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.5"
+          terraform_wrapper: false
+
+      - name: Terraform init and validate approved workspace/backend
+        working-directory: ${{ env.TF_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform init \
+            -input=false \
+            -no-color
+
+          actual_workspace="$(terraform workspace show)"
+
+          if [ "$actual_workspace" != "$TF_EXPECTED_WORKSPACE" ]; then
+            echo "ERROR: Workspace mismatch."
+            echo "Apply is blocked."
+            exit 1
+          fi
+
+          if [ ! -f ".terraform/terraform.tfstate" ]; then
+            echo "ERROR: Backend metadata is unavailable."
+            echo "Apply is blocked."
+            exit 1
+          fi
+
+          actual_backend_type="$(
+            jq -r '.backend.type // empty' .terraform/terraform.tfstate
+          )"
+
+          actual_bucket="$(
+            jq -r '.backend.config.bucket // empty' .terraform/terraform.tfstate
+          )"
+
+          actual_key="$(
+            jq -r '.backend.config.key // empty' .terraform/terraform.tfstate
+          )"
+
+          actual_region="$(
+            jq -r '.backend.config.region // empty' .terraform/terraform.tfstate
+          )"
+
+          if [ "$actual_backend_type" != "s3" ]; then
+            echo "ERROR: Backend type mismatch."
+            echo "Apply is blocked."
+            exit 1
+          fi
+
+          if [ "$actual_bucket" != "$TF_EXPECTED_BACKEND_BUCKET" ]; then
+            echo "ERROR: Backend bucket mismatch."
+            echo "Apply is blocked."
+            exit 1
+          fi
+
+          if [ "$actual_key" != "$TF_EXPECTED_BACKEND_KEY" ]; then
+            echo "ERROR: Backend key mismatch."
+            echo "Apply is blocked."
+            exit 1
+          fi
+
+          if [ "$actual_region" != "$TF_EXPECTED_BACKEND_REGION" ]; then
+            echo "ERROR: Backend region mismatch."
+            echo "Apply is blocked."
+            exit 1
+          fi
+
+          echo "Workspace/backend validation passed."
+
+      - name: Re-plan immediately before reconciliation
+        id: reconcile_plan
+        working-directory: ${{ env.TF_DIR }}
+        shell: bash
+        run: |
+          set +e
+
+          terraform plan \
+            -input=false \
+            -no-color \
+            -var-file="terraform.tfvars" \
+            -detailed-exitcode \
+            -out=reconcile.tfplan \
+            > reconcile-plan.log 2>&1
+
+          exit_code=$?
+
+          set -e
+
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+          echo "Reconciliation plan exit code: $exit_code"
+
+          if [ "$exit_code" -eq 0 ]; then
+            echo "No drift remains."
+            echo "Terraform apply will NOT run."
+            exit 0
+          fi
+
+          if [ "$exit_code" -eq 1 ]; then
+            echo "ERROR: Reconciliation plan failed."
+            echo "Terraform apply will NOT run."
+            exit 1
+          fi
+
+          if [ "$exit_code" -ne 2 ]; then
+            echo "ERROR: Unexpected Terraform exit code: $exit_code"
+            echo "Terraform apply will NOT run."
+            exit 1
+          fi
+
+          echo "Drift still exists."
+          echo "Approved reconciliation plan is ready."
+
+      - name: Apply approved reconciliation plan
+        if: steps.reconcile_plan.outputs.exit_code == '2'
+        working-directory: ${{ env.TF_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform apply \
+            -input=false \
+            -no-color \
+            reconcile.tfplan
+
+          echo "Terraform reconciliation completed."

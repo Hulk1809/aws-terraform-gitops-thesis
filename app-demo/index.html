@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="AWS Terraform GitHub Actions DevSecOps Dashboard"
+    >
+
+    <title>AWS Terraform DevSecOps Dashboard</title>
+
+    <style>
+        :root {
+            --bg: #07111f;
+            --bg-secondary: #0b1728;
+            --card: rgba(15, 29, 48, 0.88);
+            --card-border: rgba(148, 163, 184, 0.16);
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --blue: #38bdf8;
+            --cyan: #22d3ee;
+            --green: #34d399;
+            --yellow: #fbbf24;
+            --purple: #a78bfa;
+            --red: #fb7185;
+            --shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family:
+                Inter,
+                ui-sans-serif,
+                system-ui,
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+
+            color: var(--text);
+
+            background:
+                radial-gradient(
+                    circle at 10% 10%,
+                    rgba(56, 189, 248, 0.12),
+                    transparent 28%
+                ),
+                radial-gradient(
+                    circle at 90% 20%,
+                    rgba(167, 139, 250, 0.10),
+                    transparent 28%
+                ),
+                linear-gradient(
+                    135deg,
+                    #050b14,
+                    #07111f 50%,
+                    #0a1424
+                );
+
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .container {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+
+            backdrop-filter: blur(18px);
+
+            background: rgba(5, 11, 20, 0.78);
+
+            border-bottom: 1px solid
+                rgba(148, 163, 184, 0.10);
+        }
+
+        .nav {
+            min-height: 72px;
+
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+
+            gap: 20px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+
+        .brand-icon {
+            width: 40px;
+            height: 40px;
+
+            display: grid;
+            place-items: center;
+
+            border-radius: 12px;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    rgba(56, 189, 248, 0.22),
+                    rgba(167, 139, 250, 0.22)
+                );
+
+            border: 1px solid
+                rgba(56, 189, 248, 0.28);
+
+            font-size: 19px;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+        }
+
+        .hero {
+            padding: 82px 0 60px;
+        }
+
+        .hero-grid {
+            display: grid;
+
+            grid-template-columns:
+                minmax(0, 1.35fr)
+                minmax(300px, 0.65fr);
+
+            gap: 34px;
+
+            align-items: center;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+
+            padding: 7px 12px;
+
+            border-radius: 999px;
+
+            background: rgba(52, 211, 153, 0.09);
+
+            border: 1px solid
+                rgba(52, 211, 153, 0.18);
+
+            color: #86efac;
+
+            font-size: 13px;
+            font-weight: 700;
+
+            margin-bottom: 20px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+
+            border-radius: 50%;
+
+            background: var(--green);
+
+            box-shadow:
+                0 0 0 5px
+                rgba(52, 211, 153, 0.10);
+        }
+
+        h1 {
+            font-size: clamp(38px, 6vw, 70px);
+            line-height: 1.02;
+            letter-spacing: -0.055em;
+
+            max-width: 850px;
+
+            margin-bottom: 22px;
+        }
+
+        .gradient-text {
+            background:
+                linear-gradient(
+                    90deg,
+                    var(--blue),
+                    var(--cyan),
+                    var(--purple)
+                );
+
+            -webkit-background-clip: text;
+            background-clip: text;
+
+            color: transparent;
+        }
+
+        .hero-description {
+            color: var(--muted);
+
+            max-width: 760px;
+
+            font-size: 18px;
+        }
+
+        .hero-badges {
+            display: flex;
+            flex-wrap: wrap;
+
+            gap: 10px;
+
+            margin-top: 26px;
+        }
+
+        .badge {
+            padding: 8px 12px;
+
+            border-radius: 9px;
+
+            background: rgba(148, 163, 184, 0.07);
+
+            border: 1px solid
+                rgba(148, 163, 184, 0.12);
+
+            color: #cbd5e1;
+
+            font-size: 13px;
+        }
+
+        .commit-card {
+            padding: 24px;
+
+            border-radius: 22px;
+
+            background:
+                linear-gradient(
+                    145deg,
+                    rgba(15, 29, 48, 0.95),
+                    rgba(8, 20, 35, 0.92)
+                );
+
+            border: 1px solid var(--card-border);
+
+            box-shadow: var(--shadow);
+
+            position: relative;
+            overflow: hidden;
+        }
+
+        .commit-card::before {
+            content: "";
+
+            position: absolute;
+
+            width: 170px;
+            height: 170px;
+
+            top: -90px;
+            right: -60px;
+
+            border-radius: 50%;
+
+            background:
+                rgba(56, 189, 248, 0.10);
+
+            filter: blur(5px);
+        }
+
+        .commit-label {
+            color: var(--muted);
+
+            font-size: 12px;
+            text-transform: uppercase;
+
+            letter-spacing: 0.12em;
+
+            margin-bottom: 10px;
+        }
+
+        .commit-value {
+            font-family:
+                "SFMono-Regular",
+                Consolas,
+                "Liberation Mono",
+                monospace;
+
+            font-size: 16px;
+
+            color: var(--cyan);
+
+            word-break: break-all;
+
+            margin-bottom: 18px;
+        }
+
+        .commit-note {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        section {
+            padding: 42px 0;
+        }
+
+        .section-heading {
+            margin-bottom: 25px;
+        }
+
+        .section-heading span {
+            color: var(--blue);
+
+            font-size: 13px;
+            font-weight: 800;
+
+            text-transform: uppercase;
+
+            letter-spacing: 0.12em;
+        }
+
+        .section-heading h2 {
+            margin-top: 6px;
+
+            font-size: clamp(27px, 4vw, 40px);
+
+            letter-spacing: -0.035em;
+        }
+
+        .section-heading p {
+            color: var(--muted);
+
+            max-width: 720px;
+
+            margin-top: 9px;
+        }
+
+        .cards {
+            display: grid;
+
+            grid-template-columns:
+                repeat(4, minmax(0, 1fr));
+
+            gap: 16px;
+        }
+
+        .card {
+            padding: 22px;
+
+            border-radius: 18px;
+
+            background: var(--card);
+
+            border: 1px solid var(--card-border);
+
+            box-shadow:
+                0 12px 30px
+                rgba(0, 0, 0, 0.15);
+
+            transition:
+                transform 0.2s ease,
+                border-color 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+
+            border-color:
+                rgba(56, 189, 248, 0.30);
+        }
+
+        .card-icon {
+            width: 46px;
+            height: 46px;
+
+            display: grid;
+            place-items: center;
+
+            border-radius: 13px;
+
+            margin-bottom: 17px;
+
+            background:
+                rgba(56, 189, 248, 0.10);
+
+            border: 1px solid
+                rgba(56, 189, 248, 0.15);
+
+            font-size: 21px;
+        }
+
+        .card:nth-child(2) .card-icon {
+            background:
+                rgba(167, 139, 250, 0.10);
+
+            border-color:
+                rgba(167, 139, 250, 0.15);
+        }
+
+        .card:nth-child(3) .card-icon {
+            background:
+                rgba(52, 211, 153, 0.10);
+
+            border-color:
+                rgba(52, 211, 153, 0.15);
+        }
+
+        .card:nth-child(4) .card-icon {
+            background:
+                rgba(251, 191, 36, 0.10);
+
+            border-color:
+                rgba(251, 191, 36, 0.15);
+        }
+
+        .card h3 {
+            font-size: 17px;
+            margin-bottom: 8px;
+        }
+
+        .card p {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .pipeline {
+            display: grid;
+
+            grid-template-columns:
+                repeat(5, minmax(0, 1fr));
+
+            gap: 10px;
+
+            align-items: stretch;
+        }
+
+        .pipeline-step {
+            position: relative;
+
+            padding: 19px;
+
+            border-radius: 15px;
+
+            background:
+                rgba(15, 29, 48, 0.75);
+
+            border: 1px solid var(--card-border);
+        }
+
+        .step-number {
+            display: inline-grid;
+
+            place-items: center;
+
+            width: 28px;
+            height: 28px;
+
+            border-radius: 50%;
+
+            background:
+                rgba(56, 189, 248, 0.12);
+
+            color: var(--blue);
+
+            font-size: 12px;
+            font-weight: 800;
+
+            margin-bottom: 12px;
+        }
+
+        .pipeline-step h3 {
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .pipeline-step p {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .data-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(2, minmax(0, 1fr));
+
+            gap: 18px;
+        }
+
+        .data-panel {
+            padding: 24px;
+
+            border-radius: 19px;
+
+            background: var(--card);
+
+            border: 1px solid var(--card-border);
+        }
+
+        .data-panel.real {
+            border-color:
+                rgba(52, 211, 153, 0.22);
+        }
+
+        .data-panel.demo {
+            border-color:
+                rgba(251, 191, 36, 0.20);
+        }
+
+        .data-title {
+            display: flex;
+
+            align-items: center;
+            gap: 9px;
+
+            margin-bottom: 16px;
+
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .data-title .indicator {
+            width: 9px;
+            height: 9px;
+
+            border-radius: 50%;
+        }
+
+        .real .indicator {
+            background: var(--green);
+        }
+
+        .demo .indicator {
+            background: var(--yellow);
+        }
+
+        .data-panel ul {
+            list-style: none;
+        }
+
+        .data-panel li {
+            padding: 9px 0;
+
+            border-bottom: 1px solid
+                rgba(148, 163, 184, 0.08);
+
+            color: var(--muted);
+
+            font-size: 14px;
+        }
+
+        .data-panel li:last-child {
+            border-bottom: 0;
+        }
+
+        .data-panel strong {
+            color: #e2e8f0;
+        }
+
+        .team {
+            display: grid;
+
+            grid-template-columns:
+                repeat(3, minmax(0, 1fr));
+
+            gap: 16px;
+        }
+
+        .member {
+            padding: 23px;
+
+            border-radius: 18px;
+
+            background: var(--card);
+
+            border: 1px solid var(--card-border);
+        }
+
+        .member-number {
+            color: var(--blue);
+
+            font-family:
+                "SFMono-Regular",
+                Consolas,
+                monospace;
+
+            font-size: 12px;
+
+            margin-bottom: 11px;
+        }
+
+        .member h3 {
+            font-size: 18px;
+            margin-bottom: 6px;
+        }
+
+        .member-role {
+            color: var(--cyan);
+
+            font-size: 13px;
+            font-weight: 700;
+
+            margin-bottom: 11px;
+        }
+
+        .member p {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .notice {
+            padding: 24px;
+
+            border-radius: 18px;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    rgba(56, 189, 248, 0.08),
+                    rgba(167, 139, 250, 0.07)
+                );
+
+            border: 1px solid
+                rgba(56, 189, 248, 0.16);
+        }
+
+        .notice h3 {
+            margin-bottom: 9px;
+        }
+
+        .notice p {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .notice code {
+            color: var(--cyan);
+
+            font-family:
+                "SFMono-Regular",
+                Consolas,
+                monospace;
+        }
+
+        footer {
+            margin-top: 40px;
+
+            padding: 30px 0 42px;
+
+            border-top: 1px solid
+                rgba(148, 163, 184, 0.10);
+
+            color: var(--muted);
+
+            font-size: 13px;
+        }
+
+        .footer-content {
+            display: flex;
+
+            justify-content: space-between;
+            gap: 20px;
+
+            flex-wrap: wrap;
+        }
+
+        .footer-highlight {
+            color: #cbd5e1;
+        }
+
+        @media (max-width: 950px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .cards {
+                grid-template-columns:
+                    repeat(2, minmax(0, 1fr));
+            }
+
+            .pipeline {
+                grid-template-columns:
+                    repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 700px) {
+            .nav-links {
+                display: none;
+            }
+
+            .hero {
+                padding-top: 55px;
+            }
+
+            .cards,
+            .data-grid,
+            .team,
+            .pipeline {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 42px;
+            }
+
+            .hero-description {
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <div class="container nav">
+
+        <a href="#" class="brand">
+            <span class="brand-icon">☁</span>
+
+            <span>
+                AWS DevSecOps
+            </span>
+        </a>
+
+        <nav class="nav-links">
+            <a href="#architecture">Kiến trúc</a>
+            <a href="#pipeline">Pipeline</a>
+            <a href="#data">Dữ liệu</a>
+            <a href="#team">Nhóm</a>
+        </nav>
+
+    </div>
+</header>
+
+
+<main>
+
+    <section class="hero">
+
+        <div class="container hero-grid">
+
+            <div>
+
+                <div class="eyebrow">
+                    <span class="status-dot"></span>
+                    Demo Application • Nginx Container
+                </div>
+
+                <h1>
+                    Terraform +
+                    <span class="gradient-text">
+                        AWS ECR
+                    </span>
+                    +
+                    GitHub Actions
+                </h1>
+
+                <p class="hero-description">
+                    Dashboard minh họa quy trình Infrastructure as Code,
+                    Container Registry và CI/CD theo định hướng DevSecOps.
+                    Ứng dụng được đóng gói bằng Docker và triển khai
+                    trên nền tảng AWS.
+                </p>
+
+                <div class="hero-badges">
+                    <span class="badge">Terraform</span>
+                    <span class="badge">Amazon ECR</span>
+                    <span class="badge">GitHub Actions</span>
+                    <span class="badge">Docker</span>
+                    <span class="badge">Nginx Alpine</span>
+                    <span class="badge">DevSecOps</span>
+                </div>
+
+            </div>
+
+
+            <div class="commit-card">
+
+                <div class="commit-label">
+                    Git Commit SHA
+                </div>
+
+                <div
+                    id="commitSha"
+                    class="commit-value"
+                >
+                    Đang tải...
+                </div>
+
+                <p class="commit-note">
+                    Giá trị được truyền vào Docker image
+                    tại thời điểm build thông qua
+                    <code>GIT_COMMIT_SHA</code>.
+                </p>
+
+            </div>
+
+        </div>
+
+    </section>
+
+    <section id="architecture">
+
+        <div class="container">
+
+            <div class="section-heading">
+
+                <span>Architecture</span>
+
+                <h2>
+                    Các thành phần chính
+                </h2>
+
+                <p>
+                    Dashboard mô tả vai trò của các công nghệ
+                    được sử dụng trong đồ án.
+                </p>
+
+            </div>
+
+
+            <div class="cards">
+
+                <article class="card">
+
+                    <div class="card-icon">
+                        IaC
+                    </div>
+
+                    <h3>
+                        Terraform
+                    </h3>
+
+                    <p>
+                        Khai báo và quản lý hạ tầng AWS
+                        bằng Infrastructure as Code,
+                        giúp cấu hình có thể version-control
+                        và tái triển khai.
+                    </p>
+
+                </article>
+
+
+                <article class="card">
+
+                    <div class="card-icon">
+                        ECR
+                    </div>
+
+                    <h3>
+                        Amazon ECR
+                    </h3>
+
+                    <p>
+                        Container Registry dùng để lưu trữ
+                        Docker image của ứng dụng.
+                        Repository được quản lý bằng Terraform.
+                    </p>
+
+                </article>
+
+
+                <article class="card">
+
+                    <div class="card-icon">
+                        CI
+                    </div>
+
+                    <h3>
+                        GitHub Actions
+                    </h3>
+
+                    <p>
+                        Tự động hóa quy trình build,
+                        kiểm tra image và push container
+                        lên Amazon ECR.
+                    </p>
+
+                </article>
+
+
+                <article class="card">
+
+                    <div class="card-icon">
+                        SEC
+                    </div>
+
+                    <h3>
+                        DevSecOps
+                    </h3>
+
+                    <p>
+                        Bổ sung các bước kiểm tra bảo mật
+                        container trước khi image được
+                        đưa vào registry.
+                    </p>
+
+                </article>
+
+            </div>
+
+        </div>
+
+    </section>
+
+    <section id="pipeline">
+
+        <div class="container">
+
+            <div class="section-heading">
+
+                <span>CI/CD Flow</span>
+
+                <h2>
+                    Luồng build container
+                </h2>
+
+                <p>
+                    Luồng minh họa từ mã nguồn Git đến
+                    container image trong ECR.
+                </p>
+
+            </div>
+
+
+            <div class="pipeline">
+
+                <article class="pipeline-step">
+
+                    <span class="step-number">
+                        01
+                    </span>
+
+                    <h3>
+                        Git Commit
+                    </h3>
+
+                    <p>
+                        Developer commit mã nguồn lên GitHub.
+                    </p>
+
+                </article>
+
+
+                <article class="pipeline-step">
+
+                    <span class="step-number">
+                        02
+                    </span>
+
+                    <h3>
+                        GitHub Actions
+                    </h3>
+
+                    <p>
+                        Workflow được kích hoạt tự động.
+                    </p>
+
+                </article>
+
+
+                <article class="pipeline-step">
+
+                    <span class="step-number">
+                        03
+                    </span>
+
+                    <h3>
+                        Docker Build
+                    </h3>
+
+                    <p>
+                        Build image và nhúng Git Commit SHA.
+                    </p>
+
+                </article>
+
+
+                <article class="pipeline-step">
+
+                    <span class="step-number">
+                        04
+                    </span>
+
+                    <h3>
+                        Security Scan
+                    </h3>
+
+                    <p>
+                        Kiểm tra container image trước khi push.
+                    </p>
+
+                </article>
+
+
+                <article class="pipeline-step">
+
+                    <span class="step-number">
+                        05
+                    </span>
+
+                    <h3>
+                        Amazon ECR
+                    </h3>
+
+                    <p>
+                        Image được lưu trong ECR Repository.
+                    </p>
+
+                </article>
+
+            </div>
+
+        </div>
+
+    </section>
+
+    <section id="data">
+
+        <div class="container">
+
+            <div class="section-heading">
+
+                <span>Data Transparency</span>
+
+                <h2>
+                    Dữ liệu thực tế và dữ liệu minh họa
+                </h2>
+
+                <p>
+                    Dashboard cố ý phân biệt rõ dữ liệu lấy được
+                    từ container với thông tin chỉ mang tính
+                    minh họa cho đồ án.
+                </p>
+
+            </div>
+
+
+            <div class="data-grid">
+
+                <article class="data-panel real">
+
+                    <div class="data-title">
+
+                        <span class="indicator"></span>
+
+                        Dữ liệu thực tế
+
+                    </div>
+
+                    <ul>
+
+                        <li>
+                            <strong>Git Commit SHA:</strong>
+                            Được đọc từ file được tạo lúc Docker build.
+                        </li>
+
+                        <li>
+                            <strong>Web Server:</strong>
+                            Nginx.
+                        </li>
+
+                        <li>
+                            <strong>Container:</strong>
+                            Ứng dụng hiện tại đang chạy trong Docker.
+                        </li>
+
+                        <li>
+                            <strong>Dashboard:</strong>
+                            Được phục vụ bởi Nginx trong container.
+                        </li>
+
+                    </ul>
+
+                </article>
+
+
+                <article class="data-panel demo">
+
+                    <div class="data-title">
+
+                        <span class="indicator"></span>
+
+                        Dữ liệu minh họa
+
+                    </div>
+
+                    <ul>
+
+                        <li>
+                            <strong>AWS Region:</strong>
+                            Hiển thị theo kiến trúc dự án,
+                            không tự nhận là dữ liệu runtime.
+                        </li>
+
+                        <li>
+                            <strong>ECR Status:</strong>
+                            Nội dung mô tả luồng triển khai,
+                            không phải truy vấn trực tiếp AWS API.
+                        </li>
+
+                        <li>
+                            <strong>Infrastructure:</strong>
+                            Các thành phần Terraform được giới thiệu
+                            ở mức kiến trúc.
+                        </li>
+
+                        <li>
+                            <strong>Runtime Metadata:</strong>
+                            Không được giả lập là dữ liệu IMDSv2 thật.
+                        </li>
+
+                    </ul>
+
+                </article>
+
+            </div>
+
+        </div>
+
+    </section>
+
+    <section>
+
+        <div class="container">
+
+            <div class="notice">
+
+                <h3>
+                    🔐 Lưu ý bảo mật về EC2 IMDSv2
+                </h3>
+
+                <p>
+                    Trình duyệt của người dùng không nên và không thể
+                    được xem như một ứng dụng server-side có quyền
+                    truy cập trực tiếp EC2 Instance Metadata Service.
+                    Dashboard này
+                    <strong>không giả vờ truy vấn</strong>
+                    endpoint IMDSv2 để lấy metadata của EC2.
+                    Nếu hệ thống cần runtime metadata, nên thực hiện
+                    việc truy vấn ở phía server-side, giới hạn dữ liệu
+                    được trả về và tuyệt đối không expose credential,
+                    token hoặc thông tin nhạy cảm cho trình duyệt.
+                </p>
+
+                <br>
+
+                <p>
+                    Ví dụ kiến trúc an toàn:
+                    <code>Browser → Application Server → IMDSv2</code>.
+                    Application Server chỉ trả về những trường cần thiết
+                    như environment hoặc instance identifier đã được
+                    kiểm soát, thay vì chuyển tiếp toàn bộ metadata.
+                </p>
+
+            </div>
+
+        </div>
+
+    </section>
+
+    <section id="team">
+
+        <div class="container">
+
+            <div class="section-heading">
+
+                <span>Team</span>
+
+                <h2>
+                    Nhóm 3 thành viên
+                </h2>
+
+                <p>
+                    Phân công theo kiến trúc đồ án trong đề cương.
+                </p>
+
+            </div>
+
+
+            <div class="team">
+
+                <article class="member">
+
+                    <div class="member-number">
+                        MEMBER 01
+                    </div>
+
+                    <h3>
+                        Thành viên 1
+                    </h3>
+
+                    <div class="member-role">
+                        Cloud / IAM / GitOps
+                    </div>
+
+                    <p>
+                        Quản trị Repository, Bootstrap,
+                        IAM OIDC, Terraform Composition,
+                        State và các pipeline CI/CD cốt lõi.
+                    </p>
+
+                </article>
+
+
+                <article class="member">
+
+                    <div class="member-number">
+                        MEMBER 02
+                    </div>
+
+                    <h3>
+                        Thành viên 2
+                    </h3>
+
+                    <div class="member-role">
+                        Cloud Infrastructure
+                    </div>
+
+                    <p>
+                        Phụ trách VPC, Network Security,
+                        Compute EC2 và các module
+                        hạ tầng AWS cốt lõi.
+                    </p>
+
+                </article>
+
+
+                <article class="member">
+
+                    <div class="member-number">
+                        MEMBER 03
+                    </div>
+
+                    <h3>
+                        Thành viên 3
+                    </h3>
+
+                    <div class="member-role">
+                        DevSecOps / ECR / FinOps
+                    </div>
+
+                    <p>
+                        Phụ trách Amazon ECR, Docker image,
+                        DevSecOps container scanning,
+                        FinOps và Drift Detection.
+                    </p>
+
+                </article>
+
+            </div>
+
+        </div>
+
+    </section>
+
+</main>
+
+
+<footer>
+
+    <div class="container footer-content">
+
+        <div>
+            <span class="footer-highlight">
+                AWS Terraform GitOps Thesis
+            </span>
+            · Dynamic Container Dashboard
+        </div>
+
+    </div>
+
+</footer>
+
+
+<script>
+
+    async function loadCommitSha() {
+
+        const element =
+            document.getElementById("commitSha");
+
+        try {
+
+            const response =
+                await fetch("/commit-sha.txt", {
+                    cache: "no-store"
+                });
+
+            if (!response.ok) {
+                throw new Error(
+                    "Không thể đọc commit-sha.txt"
+                );
+            }
+
+            const sha =
+                (await response.text()).trim();
+
+            element.textContent =
+                sha || "unknown";
+
+        } catch (error) {
+
+            element.textContent =
+                "unknown";
+
+            console.warn(
+                "Git Commit SHA không khả dụng:",
+                error
+            );
+        }
+    }
+
+    loadCommitSha();
+</script>
+
+</body>
+</html>

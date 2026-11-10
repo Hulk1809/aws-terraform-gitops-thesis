@@ -1,0 +1,135 @@
+name: 02 - CD Terraform Apply
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "environments/prod/**"
+      - "modules/**"
+      - ".github/workflows/02-cd-terraform-apply.yml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action"
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-prod
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Check deployment readiness
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.readiness.outputs.ready }}
+      action: ${{ steps.readiness.outputs.action }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check deployment gate and required files
+        id: readiness
+        env:
+          AUTO_DEPLOY: ${{ vars.AWS_AUTO_DEPLOY }}
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_ACTION: ${{ inputs.action }}
+        run: |
+          action="plan"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            action="$REQUESTED_ACTION"
+          elif [[ "$AUTO_DEPLOY" == "true" ]]; then
+            action="apply"
+          fi
+
+          required_files=(
+            environments/prod/backend.tf
+            environments/prod/main.tf
+            modules/vpc/main.tf
+            modules/compute-ec2/main.tf
+            modules/ecr-registry/main.tf
+          )
+
+          ready=true
+          for file in "${required_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "Thiếu file bắt buộc: $file"
+              ready=false
+            fi
+          done
+
+          if [[ "$EVENT_NAME" == "push" && "$AUTO_DEPLOY" != "true" ]]; then
+            echo "AWS_AUTO_DEPLOY=false; bỏ qua deploy tự động."
+            ready=false
+          fi
+
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "action=$action" >> "$GITHUB_OUTPUT"
+
+  terraform:
+    name: Terraform ${{ needs.gate.outputs.action }}
+    needs: gate
+    if: needs.gate.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: environments/prod
+    env:
+      TF_IN_AUTOMATION: true
+      TF_INPUT: false
+      TF_VAR_alert_email: ${{ secrets.TF_VAR_ALERT_EMAIL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-southeast-1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+
+      - name: Initialize Terraform
+        run: terraform init -input=false
+
+      - name: Check formatting
+        run: terraform fmt -check -recursive
+
+      - name: Validate configuration
+        run: terraform validate -no-color
+
+      - name: Create plan
+        if: needs.gate.outputs.action != 'destroy'
+        run: terraform plan -no-color -out=tfplan
+
+      - name: Apply plan
+        if: needs.gate.outputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Preview destroy
+        if: needs.gate.outputs.action == 'destroy'
+        run: terraform plan -destroy -no-color -out=destroy.tfplan
+
+      - name: Destroy environment
+        if: needs.gate.outputs.action == 'destroy'
+        run: terraform apply -auto-approve destroy.tfplan
